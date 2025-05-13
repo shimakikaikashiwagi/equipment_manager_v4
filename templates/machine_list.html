@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <title>機械一覧</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='machine_list.css') }}">
+</head>
+<body>
+
+    <!-- タイトルバー -->
+    <header class="header-bar">
+        <div class="left-group">
+            <a href="{{ url_for('index') }}" class="back-button">← 戻る</a>
+            <h1 class="page-title">機械一覧</h1>
+        </div>
+        <div class="right-group">
+            <a href="{{ url_for('index') }}">トップへ</a>
+        </div>
+    </header>
+
+    <h2>
+    <!-- 検索機能の追加 -->
+    <div class="about-container">
+        <div class="search-container">
+            <input type="text" id="search-input" placeholder="検索...">
+        </div>
+
+        <!-- CSV出力・印刷ボタン -->
+        <div class="action-buttons">
+            <button class="csv-button" id="csv-export-btn">CSV出力</button>
+        </div>
+    </div>
+
+    <div class="add_button">
+        <a href="{{ url_for('add_construction_machine') }}">新規登録</a>
+    </div>
+
+    <table id="printable-table">
+        <thead>
+            <tr>
+                <th>機械</th>
+                <th>メーカー</th>
+                <th>レンタル番号</th>
+                <th>場所</th>
+                <th>状態</th>
+                <th>切替</th>
+                <th>詳細</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for machine in machines %}
+            <tr>
+                <td class="fixed-cell">{{ machine.name or '' }}</td>
+                <td class="fixed-cell">{{ machine.manufacturer or '' }}</td>
+                <td class="fixed-cell">{{ machine.serial_number or '' }}</td>
+                <td class="fixed-cell">
+                    {{ machine.location or '' }}
+
+                <!-- プルダウン＋変更ボタン（最初は非表示） -->
+                <span id="location-form-{{ machine.id }}" class="location-form" style="display:none; margin-left: 8px;">
+                    <form action="{{ url_for('update_location', machine_id=machine.id) }}" method="POST" style="display:inline;">
+                        <select name="location" id="location-{{ machine.id }}">
+                            <option value="本社" {% if machine.location == '本社' %}selected{% endif %}>本社</option>
+                            <option value="東舞鶴" {% if machine.location == '東舞鶴' %}selected{% endif %}>東舞鶴</option>
+                            <option value="中丹" {% if machine.location == '中丹' %}selected{% endif %}>中丹</option>
+                            <option value="丹後" {% if machine.location == '丹後' %}selected{% endif %}>丹後</option>
+                        </select>
+                        <input type="submit" value="変更">
+                    </form>
+                </span>
+            </td>
+                <td class="status-cell">
+                    {% if not machine.is_active %}
+                        出庫中
+                    {% else %}
+                        <span class="invisible-text">出庫中</span>
+                    {% endif %}
+                </td>
+                <td class="fixed-cell">
+                    <!-- 状態変更ボタン -->
+                    <form action="{{ url_for('toggle_active', machine_id=machine.id) }}" method="POST" style="display:inline;">
+                        <input type="submit" value="状態変更">
+                    </form>
+
+                    <!-- 場所変更ボタン -->
+                    <form onsubmit="event.preventDefault(); showLocationForm({{ machine.id }});" style="display:inline;">
+                        <input type="submit" value="場所変更">
+                    </form>
+                </td>
+
+                <td class="fixed-cell">
+                    <form action="{{ url_for('delete_machine', machine_id=machine.id) }}" method="POST" style="display:inline;">
+                        <input type="submit" value="削除" onclick="return confirm('本当に削除しますか？');">
+                    </form>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    </h2>
+
+    <script>
+        document.addEventListener("DOMContentLoaded", function () {
+            const searchInput = document.getElementById("search-input");
+
+            searchInput.addEventListener("input", function () {
+                const filter = searchInput.value.toLowerCase();
+                const rows = document.querySelectorAll("table tbody tr");
+
+                rows.forEach(row => {
+                    const rowText = row.textContent.toLowerCase();
+                    if (rowText.includes(filter)) {
+                        row.style.display = "";
+                    } else {
+                        row.style.display = "none";
+                    }
+                });
+            });
+        });
+
+        // 場所変更フォームを表示するための関数
+        function showLocationForm(machineId) {
+            var form = document.getElementById('location-form-' + machineId);
+            form.style.display = (form.style.display === 'none' || form.style.display === '') ? 'inline' : 'none';
+        }
+
+        // CSV出力ボタンの処理
+        document.getElementById("csv-export-btn").addEventListener("click", function () {
+            const rows = document.querySelectorAll("table tbody tr");
+            let csvContent = "data:text/csv;charset=utf-8,\uFEFF"; // UTF-8 BOM付きでExcel対応
+
+            // ヘッダー
+            const headers = Array.from(document.querySelectorAll("table thead th"))
+                                .map(th => `"${th.textContent.trim()}"`)
+                                .join(",");
+            csvContent += headers + "\n";
+
+            // 表示されている行だけ取得
+            rows.forEach(row => {
+                if (row.style.display !== "none") {
+                    const cols = Array.from(row.querySelectorAll("td")).map(td => {
+                        // tdから見えない文字（invisible-text）を除外
+                        const visibleText = Array.from(td.childNodes)
+                            .filter(node => node.nodeType === 3) // テキストノードのみ取得
+                            .map(node => node.textContent.trim())
+                            .join(" "); // 複数のテキストを1つに結合
+
+                        return `"${visibleText}"`; // CSVとして出力
+                    });
+                    csvContent += cols.join(",") + "\n";
+                }
+            });
+
+            const encodedUri = encodeURI(csvContent);
+            const link = document.createElement("a");
+            link.setAttribute("href", encodedUri);
+            link.setAttribute("download", "machine_list.csv");
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        });
+    </script>
+
+</body>
+</html>
